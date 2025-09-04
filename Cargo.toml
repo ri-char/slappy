@@ -1,0 +1,14 @@
+[package]
+name = "slappy"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.99"
+arboard = { version = "*", features = ["wayland-data-control"] }
+eframe = { version = "0.32", features = ["__screenshot", "wayland", "accesskit", "default_fonts", "glow"], default-features = false }
+egui_extras = { version = "0.32", features = ["image"], default-features = false }
+env_logger = { version = "0.11", features = ["auto-color", "humantime"] }
+image = "0.25"
+strum = { version = "0.27", features = ["derive"] }
+winit = { version = "0.30", default-features = false, features = ["ahash", "bytemuck", "memmap2", "percent-encoding", "rwh_06", "sctk", "sctk-adwaita", "wayland", "wayland-backend", "wayland-client", "wayland-csd-adwaita", "wayland-dlopen", "wayland-protocols", "wayland-protocols-plasma"] }
