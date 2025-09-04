@@ -1,27 +1,63 @@
 use eframe::{
-    egui::{Pos2, Rect, Response, Sense, Stroke, Ui},
+    egui::{
+        Label, Pos2, Rect, Response, Rgba, Sense, Slider, Stroke, Ui, Widget,
+        color_picker::{Alpha, color_edit_button_rgba},
+    },
     epaint::EllipseShape,
 };
 
 use crate::{
     ui::{
-        GeneralAttribute, RenderInfo,
+        RenderInfo,
         move_resize::{MoveResize, ResizeMode},
         shape::Shape,
     },
     utils::from_ratio_rect,
 };
 
+#[derive(Clone)]
+pub struct CircleAttribute {
+    pub line_width: f32,
+    pub fill_color: Rgba,
+    pub border_color: Rgba,
+}
+
+impl Default for CircleAttribute {
+    fn default() -> Self {
+        Self {
+            line_width: 3f32,
+            border_color: Rgba::RED,
+            fill_color: Rgba::TRANSPARENT,
+        }
+    }
+}
+
+impl CircleAttribute {
+    pub fn ui(&mut self, ui: &mut Ui) {
+        Label::new("Line width").selectable(false).ui(ui);
+        Slider::new(&mut self.line_width, 1f32..=20f32).ui(ui);
+        ui.end_row();
+
+        Label::new("Fill Color").selectable(false).ui(ui);
+        color_edit_button_rgba(ui, &mut self.fill_color, Alpha::OnlyBlend);
+        ui.end_row();
+
+        Label::new("Border Color").selectable(false).ui(ui);
+        color_edit_button_rgba(ui, &mut self.border_color, Alpha::OnlyBlend);
+        ui.end_row();
+    }
+}
+
 pub struct Circle {
     pub range: Rect,
 
-    pub attributes: GeneralAttribute,
+    pub attributes: CircleAttribute,
 
     move_resize: MoveResize,
 }
 
 impl Circle {
-    pub fn create_at(pos: Pos2, attr: GeneralAttribute) -> Self {
+    pub fn create_at(pos: Pos2, attr: CircleAttribute) -> Self {
         Circle {
             range: Rect::ZERO,
             attributes: attr,
@@ -51,12 +87,8 @@ impl Shape for Circle {
         }
     }
 
-    fn has_toolbar(&self) -> bool {
-        true
-    }
-
     fn toolbar_ui(&mut self, ui: &mut Ui) {
-        self.attributes.ui(ui, |_| {});
+        self.attributes.ui(ui);
     }
 
     fn on_create_response(&mut self, ui: &mut Ui, resp: &Response, render_info: &RenderInfo) {

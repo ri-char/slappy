@@ -4,8 +4,10 @@ use eframe::egui::{
 
 use crate::{
     ui::RenderInfo,
-    utils::{from_ratio_rect, to_ratio_rect},
+    utils::{from_ratio_pos, from_ratio_rect, to_ratio_pos, to_ratio_rect},
 };
+
+const DEFAULT_INTERACT_RANGE: f32 = 10f32;
 
 #[derive(Debug, Default, Clone)]
 enum MoveResizeState {
@@ -82,32 +84,52 @@ impl MoveResize {
                 CursorIcon::ResizeSouthWest,
             ),
         ] {
-            let handle = add_control_point(ui, move_pos, cursor_icon);
+            let handle = add_control_point(ui, move_pos, cursor_icon, DEFAULT_INTERACT_RANGE);
             self.handle_resize(ui, &handle, render_info, rect, ResizeMode::Fixed(fixed_pos));
         }
 
-        let handle = add_control_point(ui, render_range.left_center(), CursorIcon::ResizeWest);
+        let handle = add_control_point(
+            ui,
+            render_range.left_center(),
+            CursorIcon::ResizeWest,
+            DEFAULT_INTERACT_RANGE,
+        );
         self.handle_resize_side(&handle, render_info, rect, || ResizeSideInfo {
             fixed: render_range.right_top(),
             length: render_range.height(),
             is_x: true,
         });
 
-        let handle = add_control_point(ui, render_range.right_center(), CursorIcon::ResizeEast);
+        let handle = add_control_point(
+            ui,
+            render_range.right_center(),
+            CursorIcon::ResizeEast,
+            DEFAULT_INTERACT_RANGE,
+        );
         self.handle_resize_side(&handle, render_info, rect, || ResizeSideInfo {
             fixed: render_range.left_top(),
             length: render_range.height(),
             is_x: true,
         });
 
-        let handle = add_control_point(ui, render_range.center_top(), CursorIcon::ResizeNorth);
+        let handle = add_control_point(
+            ui,
+            render_range.center_top(),
+            CursorIcon::ResizeNorth,
+            DEFAULT_INTERACT_RANGE,
+        );
         self.handle_resize_side(&handle, render_info, rect, || ResizeSideInfo {
             fixed: render_range.left_bottom(),
             length: render_range.width(),
             is_x: false,
         });
 
-        let handle = add_control_point(ui, render_range.center_bottom(), CursorIcon::ResizeSouth);
+        let handle = add_control_point(
+            ui,
+            render_range.center_bottom(),
+            CursorIcon::ResizeSouth,
+            DEFAULT_INTERACT_RANGE,
+        );
         self.handle_resize_side(&handle, render_info, rect, || ResizeSideInfo {
             fixed: render_range.left_top(),
             length: render_range.width(),
@@ -237,10 +259,148 @@ impl MoveResize {
     }
 }
 
-pub fn add_control_point(ui: &mut Ui, pos: Pos2, icon: CursorIcon) -> Response {
+#[derive(Debug, Default, Clone)]
+pub struct LineMove {
+    // state: LineMoveState,
+    offset: Vec2,
+    line: Vec2,
+}
+
+impl LineMove {
+    pub fn ui(
+        &mut self,
+        ui: &mut Ui,
+        render_info: &RenderInfo,
+        pos_start: &mut Pos2,
+        pos_end: &mut Pos2,
+        expand_start: f32,
+    ) {
+        let render_start_pos = from_ratio_pos(pos_start, &render_info.screenshot_rect);
+        let render_end_pos = from_ratio_pos(pos_end, &render_info.screenshot_rect);
+
+        let mut render_range =
+            Rect::from_center_size(render_start_pos, Vec2::splat(expand_start * 2f32));
+        render_range.extend_with(render_end_pos);
+        let render_range = render_range.expand(2f32);
+        let resp = ui
+            .allocate_rect(render_range, Sense::drag())
+            .on_hover_cursor(CursorIcon::Grab);
+        self.handle_move(
+            ui,
+            &resp,
+            render_info,
+            pos_start,
+            pos_end,
+            &render_start_pos,
+            &render_end_pos,
+        );
+
+        let handle = add_control_point(
+            ui,
+            render_start_pos,
+            CursorIcon::Grab,
+            10f32 + expand_start * 2f32,
+        );
+        self.handle_move_start(ui, &handle, render_info, pos_start, pos_end);
+
+        let handle =
+            add_control_point(ui, render_end_pos, CursorIcon::Grab, DEFAULT_INTERACT_RANGE);
+        self.handle_move_end(ui, &handle, render_info, pos_start, pos_end);
+    }
+
+    pub fn handle_move_start(
+        &mut self,
+        ui: &mut Ui,
+        resp: &Response,
+        render_info: &RenderInfo,
+        pos_start: &mut Pos2,
+        pos_end: &Pos2,
+    ) {
+        if resp.dragged()
+            && let Some(current_pos) = resp.interact_pointer_pos()
+        {
+            ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+            *pos_start = to_ratio_pos(
+                &calc_pos_with_shfit_modifier(ui, current_pos, pos_end, render_info),
+                &render_info.screenshot_rect,
+            );
+        }
+    }
+
+    pub fn handle_move_end(
+        &mut self,
+        ui: &mut Ui,
+        resp: &Response,
+        render_info: &RenderInfo,
+        pos_start: &Pos2,
+        pos_end: &mut Pos2,
+    ) {
+        if resp.dragged()
+            && let Some(current_pos) = resp.interact_pointer_pos()
+        {
+            ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+            *pos_end = to_ratio_pos(
+                &calc_pos_with_shfit_modifier(ui, current_pos, pos_start, render_info),
+                &render_info.screenshot_rect,
+            );
+        }
+    }
+
+    #[inline]
+    pub fn handle_move(
+        &mut self,
+        ui: &mut Ui,
+        resp: &Response,
+        render_info: &RenderInfo,
+        pos_start: &mut Pos2,
+        pos_end: &mut Pos2,
+        render_start_pos: &Pos2,
+        render_end_pos: &Pos2,
+    ) {
+        if resp.dragged()
+            && let Some(current_pos) = resp.interact_pointer_pos()
+        {
+            if resp.drag_started() {
+                self.line = *render_end_pos - *render_start_pos;
+                self.offset = current_pos - *render_start_pos;
+            }
+            ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
+            let start = current_pos - self.offset;
+            let end = start + self.line;
+            *pos_start = to_ratio_pos(&start, &render_info.screenshot_rect);
+            *pos_end = to_ratio_pos(&end, &render_info.screenshot_rect);
+        }
+    }
+}
+
+fn calc_pos_with_shfit_modifier(
+    ui: &mut Ui,
+    pos: Pos2,
+    ratio_base: &Pos2,
+    render_info: &RenderInfo,
+) -> Pos2 {
+    if ui.input(|i| i.modifiers.shift) {
+        let base = from_ratio_pos(ratio_base, &render_info.screenshot_rect);
+        let offset = (pos - base).abs();
+        if offset.x < offset.y {
+            Pos2 {
+                x: base.x,
+                y: pos.y,
+            }
+        } else {
+            Pos2 {
+                x: pos.x,
+                y: base.y,
+            }
+        }
+    } else {
+        pos
+    }
+}
+
+fn add_control_point(ui: &mut Ui, pos: Pos2, icon: CursorIcon, interact_range: f32) -> Response {
     const FILL_COLOR: Color32 = Color32::from_gray(0xee);
     const RADIUS: f32 = 6f32;
-    const INTERACT_RANGE: f32 = RADIUS + 5f32;
 
     const STROKE: Stroke = Stroke {
         width: 1.0f32,
@@ -254,7 +414,7 @@ pub fn add_control_point(ui: &mut Ui, pos: Pos2, icon: CursorIcon) -> Response {
         StrokeKind::Middle,
     );
     ui.allocate_rect(
-        Rect::from_center_size(pos, Vec2::splat(INTERACT_RANGE)),
+        Rect::from_center_size(pos, Vec2::splat(interact_range)),
         Sense::drag(),
     )
     .on_hover_cursor(icon)

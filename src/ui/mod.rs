@@ -5,75 +5,30 @@ pub mod shape;
 use std::io::{Cursor, Write};
 use std::sync::Arc;
 
-use eframe::egui::{
-    self, Button, Image, InnerResponse, Label, Rect, Rgba, Slider, Ui, Vec2, Widget,
-    ahash::HashMap, color_picker::color_edit_button_rgba,
-};
+use eframe::egui::{self, Button, Image, Rect, Ui, Vec2, Widget, ahash::HashMap};
 use eframe::egui::{Color32, ColorImage, Context, Modifiers, Pos2, Response, RichText};
 use egui::Key;
 use strum::IntoEnumIterator;
 use strum::{EnumIter, IntoStaticStr};
 
-use crate::ui::shape::circle::Circle;
+use crate::ui::shape::circle::{Circle, CircleAttribute};
 use crate::ui::shape::line::{Line, LineAttribute};
+use crate::ui::shape::number::{Number, NumberAttribute};
 use crate::ui::shape::rectangle::RectangleAttribute;
+use crate::ui::shape::text::{Text, TextAttribute};
 use crate::ui::shape::{ShapeId, rectangle::Rectangle};
 use crate::utils::from_ratio_rect;
 
 #[derive(PartialEq, Eq, Clone, Copy, Default, EnumIter, IntoStaticStr)]
-enum ToolBar {
+enum Tool {
     None,
     #[default]
     Crop,
     Rect,
     Circle,
     Line,
-}
-
-#[derive(Clone)]
-pub struct GeneralAttribute {
-    /// the width of brush
-    pub line_width: f32,
-    pub fill_color: Rgba,
-    pub border_color: Rgba,
-}
-
-impl Default for GeneralAttribute {
-    fn default() -> Self {
-        Self {
-            line_width: 3f32,
-            border_color: Rgba::RED,
-            fill_color: Rgba::TRANSPARENT,
-        }
-    }
-}
-
-impl GeneralAttribute {
-    fn ui<R>(&mut self, ui: &mut Ui, add_contents: impl FnOnce(&mut Ui) -> R) -> InnerResponse<R> {
-        egui::Grid::new("global_attributes").show(ui, |ui| {
-            Label::new("Line width").selectable(false).ui(ui);
-            Slider::new(&mut self.line_width, 1f32..=20f32).ui(ui);
-            ui.end_row();
-
-            Label::new("Fill Color").selectable(false).ui(ui);
-            color_edit_button_rgba(
-                ui,
-                &mut self.fill_color,
-                egui::color_picker::Alpha::OnlyBlend,
-            );
-            ui.end_row();
-
-            Label::new("Border Color").selectable(false).ui(ui);
-            color_edit_button_rgba(
-                ui,
-                &mut self.border_color,
-                egui::color_picker::Alpha::OnlyBlend,
-            );
-            ui.end_row();
-
-            add_contents(ui)
-        })
-    }
+    Text,
+    Number,
 }
 
 pub struct RenderInfo {
@@ -85,7 +40,7 @@ pub struct MyApp {
     raw_screenshot_texture: egui::load::Bytes,
 
     /// The currently selected tool in the toolbar
-    selected_toolbar: ToolBar,
+    selected_tool: Tool,
 
     /// Cropped range
     crop_tool: crop::CropTool,
@@ -94,9 +49,11 @@ pub struct MyApp {
     shapes: HashMap<ShapeId, Box<dyn shape::Shape>>,
     active_shape_id: Option<ShapeId>,
 
-    global_attributes: GeneralAttribute,
     rect_attributes: RectangleAttribute,
+    circle_attributes: CircleAttribute,
     line_attributes: LineAttribute,
+    text_attributes: TextAttribute,
+    number_attributes: NumberAttribute,
 
     error_message: Option<String>,
 
@@ -109,13 +66,15 @@ impl MyApp {
     pub fn new(raw_screenshot: Vec<u8>) -> Self {
         Self {
             raw_screenshot_texture: egui::load::Bytes::from(raw_screenshot),
-            selected_toolbar: Default::default(),
+            selected_tool: Default::default(),
             crop_tool: Default::default(),
             shapes: Default::default(),
             active_shape_id: None,
-            global_attributes: Default::default(),
             rect_attributes: Default::default(),
+            circle_attributes: Default::default(),
             line_attributes: Default::default(),
+            text_attributes: Default::default(),
+            number_attributes: Default::default(),
             error_message: None,
             want_screenshot: false,
             want_screenshot_first_signal: false,
@@ -149,7 +108,7 @@ impl eframe::App for MyApp {
                 // render crop range
                 if !self.want_screenshot {
                     self.crop_tool
-                        .ui(ui, &render_info, self.selected_toolbar == ToolBar::Crop);
+                        .ui(ui, &render_info, self.selected_tool == Tool::Crop);
                 }
 
                 if self.want_screenshot_first_signal {
@@ -196,17 +155,17 @@ impl MyApp {
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    for tool in ToolBar::iter() {
-                        if tool == ToolBar::None {
+                    for tool in Tool::iter() {
+                        if tool == Tool::None {
                             continue;
                         }
-                        let btn = Button::new(<ToolBar as Into<&'static str>>::into(tool))
-                            .selected(self.selected_toolbar == tool);
+                        let btn = Button::new(<Tool as Into<&'static str>>::into(tool))
+                            .selected(self.selected_tool == tool);
                         if btn.ui(ui).clicked() {
-                            if self.selected_toolbar == tool {
-                                self.selected_toolbar = ToolBar::None;
+                            if self.selected_tool == tool {
+                                self.selected_tool = Tool::None;
                             } else {
-                                self.selected_toolbar = tool;
+                                self.selected_tool = tool;
                             }
                             self.active_shape_id = None;
                         }
@@ -221,7 +180,9 @@ impl MyApp {
                 ui.horizontal(|ui| {
                     let save_shotcut = ctx.input_mut(|i| i.consume_key(Modifiers::CTRL, Key::S));
                     let save_btn_clicked = ui.add_enabled(saveable, Button::new("Save")).clicked();
-                    let copy_shotcut = ui.input(|inp| inp.events.iter().any(|ev| matches!(ev, egui::Event::Copy))) && !ctx.wants_keyboard_input();
+                    let copy_shotcut = ui
+                        .input(|inp| inp.events.iter().any(|ev| matches!(ev, egui::Event::Copy)))
+                        && !ctx.wants_keyboard_input();
                     let copy_btn_clicked = ui.add_enabled(saveable, Button::new("Copy")).clicked();
 
                     if save_shotcut || save_btn_clicked || copy_shotcut || copy_btn_clicked {
@@ -235,25 +196,20 @@ impl MyApp {
                     }
                 });
                 ui.separator();
-                if let Some(active_shape) = self.active_shape() {
-                    if active_shape.has_toolbar() {
+                egui::Grid::new("attributes").show(ui, |ui| {
+                    if let Some(active_shape) = self.active_shape() {
                         active_shape.toolbar_ui(ui);
-                    }
-                } else {
-                    match self.selected_toolbar {
-                        ToolBar::None | ToolBar::Crop | ToolBar::Circle => {
-                            self.global_attributes.ui(ui, |_| {});
-                        }
-                        ToolBar::Rect => {
-                            self.global_attributes
-                                .ui(ui, |ui| self.rect_attributes.ui(ui));
-                        }
-                        ToolBar::Line => {
-                            self.global_attributes
-                                .ui(ui, |ui| self.line_attributes.ui(ui));
+                    } else {
+                        match self.selected_tool {
+                            Tool::None | Tool::Crop => {}
+                            Tool::Circle => self.circle_attributes.ui(ui),
+                            Tool::Rect => self.rect_attributes.ui(ui),
+                            Tool::Line => self.line_attributes.ui(ui),
+                            Tool::Text => self.text_attributes.ui(ui),
+                            Tool::Number => self.number_attributes.ui(ui),
                         }
                     }
-                }
+                });
             });
     }
 
@@ -281,7 +237,11 @@ impl MyApp {
         }
 
         if ui.ctx().input(|i| i.key_pressed(Key::Escape)) {
-            self.active_shape_id = None;
+            if self.active_shape_id.is_some() {
+                self.active_shape_id = None;
+            } else {
+                ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
+            }
         }
     }
 
@@ -291,11 +251,11 @@ impl MyApp {
         resp: &eframe::egui::Response,
         render_info: &RenderInfo,
     ) {
-        match self.selected_toolbar {
-            ToolBar::Crop => {
+        match self.selected_tool {
+            Tool::Crop => {
                 self.crop_tool.on_global_response(ui, resp, render_info);
             }
-            ToolBar::Rect => {
+            Tool::Rect => {
                 if resp.clicked() {
                     self.active_shape_id = None;
                 }
@@ -303,11 +263,7 @@ impl MyApp {
                     && let Some(pos) = resp.interact_pointer_pos()
                 {
                     let shape_id = ShapeId::new();
-                    let rect = Rectangle::create_at(
-                        pos,
-                        self.global_attributes.clone(),
-                        self.rect_attributes.clone(),
-                    );
+                    let rect = Rectangle::create_at(pos, self.rect_attributes.clone());
                     self.shapes.insert(shape_id, Box::new(rect));
                     self.active_shape_id = Some(shape_id);
                 } else if (resp.drag_stopped() || resp.dragged())
@@ -316,7 +272,7 @@ impl MyApp {
                     active_shape.on_create_response(ui, resp, render_info);
                 }
             }
-            ToolBar::Circle => {
+            Tool::Circle => {
                 if resp.clicked() {
                     self.active_shape_id = None;
                 }
@@ -324,7 +280,7 @@ impl MyApp {
                     && let Some(pos) = resp.interact_pointer_pos()
                 {
                     let shape_id = ShapeId::new();
-                    let circle = Circle::create_at(pos, self.global_attributes.clone());
+                    let circle = Circle::create_at(pos, self.circle_attributes.clone());
                     self.shapes.insert(shape_id, Box::new(circle));
                     self.active_shape_id = Some(shape_id);
                 } else if (resp.drag_stopped() || resp.dragged())
@@ -333,7 +289,7 @@ impl MyApp {
                     active_shape.on_create_response(ui, resp, render_info);
                 }
             }
-            ToolBar::Line => {
+            Tool::Line => {
                 if resp.clicked() {
                     self.active_shape_id = None;
                 }
@@ -341,12 +297,7 @@ impl MyApp {
                     && let Some(pos) = resp.interact_pointer_pos()
                 {
                     let shape_id = ShapeId::new();
-                    let line = Line::create_at(
-                        pos,
-                        self.global_attributes.clone(),
-                        self.line_attributes.clone(),
-                        render_info,
-                    );
+                    let line = Line::create_at(pos, self.line_attributes.clone(), render_info);
                     self.shapes.insert(shape_id, Box::new(line));
                     self.active_shape_id = Some(shape_id);
                 } else if (resp.drag_stopped() || resp.dragged())
@@ -355,7 +306,60 @@ impl MyApp {
                     active_shape.on_create_response(ui, resp, render_info);
                 }
             }
-            ToolBar::None => {}
+            Tool::Text => {
+                if resp.clicked()
+                    && let Some(pos) = resp.interact_pointer_pos()
+                {
+                    if self.active_shape_id.is_some() {
+                        self.active_shape_id = None;
+                    } else {
+                        let shape_id = ShapeId::new();
+                        let text = Text::create_at(pos, self.text_attributes.clone(), render_info);
+                        self.shapes.insert(shape_id, Box::new(text));
+                        self.active_shape_id = Some(shape_id);
+                    }
+                }
+                if resp.drag_started()
+                    && let Some(pos) = resp.interact_pointer_pos()
+                {
+                    let shape_id = ShapeId::new();
+                    let text = Text::create_at(pos, self.text_attributes.clone(), render_info);
+                    self.shapes.insert(shape_id, Box::new(text));
+                    self.active_shape_id = Some(shape_id);
+                } else if (resp.drag_stopped() || resp.dragged())
+                    && let Some(active_shape) = self.active_shape()
+                {
+                    active_shape.on_create_response(ui, resp, render_info);
+                }
+            }
+            Tool::Number => {
+                if resp.clicked()
+                    && let Some(pos) = resp.interact_pointer_pos()
+                {
+                    if self.active_shape_id.is_some() {
+                        self.active_shape_id = None;
+                    } else {
+                        let shape_id = ShapeId::new();
+                        let text =
+                            Number::create_at(pos, self.number_attributes.clone(), render_info);
+                        self.shapes.insert(shape_id, Box::new(text));
+                        self.active_shape_id = Some(shape_id);
+                    }
+                }
+                if resp.drag_started()
+                    && let Some(pos) = resp.interact_pointer_pos()
+                {
+                    let shape_id = ShapeId::new();
+                    let text = Number::create_at(pos, self.number_attributes.clone(), render_info);
+                    self.shapes.insert(shape_id, Box::new(text));
+                    self.active_shape_id = Some(shape_id);
+                } else if (resp.drag_stopped() || resp.dragged())
+                    && let Some(active_shape) = self.active_shape()
+                {
+                    active_shape.on_create_response(ui, resp, render_info);
+                }
+            }
+            Tool::None => {}
         }
     }
 

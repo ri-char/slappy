@@ -1,23 +1,50 @@
 use eframe::egui::{
-    CornerRadius, Label, Pos2, Rect, Response, Sense, Slider, Stroke, StrokeKind, Ui, Widget,
+    CornerRadius, Label, Pos2, Rect, Response, Rgba, Sense, Slider, Stroke, StrokeKind, Ui, Widget,
+    color_picker::{Alpha, color_edit_button_rgba},
 };
 
 use crate::{
     ui::{
-        GeneralAttribute, RenderInfo,
+        RenderInfo,
         move_resize::{MoveResize, ResizeMode},
         shape::Shape,
     },
     utils::from_ratio_rect,
 };
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct RectangleAttribute {
-    radius: f32,
+    pub line_width: f32,
+    pub fill_color: Rgba,
+    pub border_color: Rgba,
+    pub radius: f32,
+}
+
+impl Default for RectangleAttribute {
+    fn default() -> Self {
+        Self {
+            line_width: 3f32,
+            border_color: Rgba::RED,
+            fill_color: Rgba::TRANSPARENT,
+            radius: 0f32,
+        }
+    }
 }
 
 impl RectangleAttribute {
     pub fn ui(&mut self, ui: &mut Ui) {
+        Label::new("Line width").selectable(false).ui(ui);
+        Slider::new(&mut self.line_width, 1f32..=20f32).ui(ui);
+        ui.end_row();
+
+        Label::new("Fill Color").selectable(false).ui(ui);
+        color_edit_button_rgba(ui, &mut self.fill_color, Alpha::OnlyBlend);
+        ui.end_row();
+
+        Label::new("Border Color").selectable(false).ui(ui);
+        color_edit_button_rgba(ui, &mut self.border_color, Alpha::OnlyBlend);
+        ui.end_row();
+
         Label::new("Radius").selectable(false).ui(ui);
         Slider::new(&mut self.radius, 0f32..=1f32).ui(ui);
         ui.end_row();
@@ -28,23 +55,17 @@ impl RectangleAttribute {
 pub struct Rectangle {
     pub range: Rect,
 
-    pub general_attributes: GeneralAttribute,
-    pub rect_attributes: RectangleAttribute,
+    pub attributes: RectangleAttribute,
 
     move_resize: MoveResize,
 }
 
 impl Rectangle {
-    pub fn create_at(
-        pos: Pos2,
-        general_attributes: GeneralAttribute,
-        rect_attributes: RectangleAttribute,
-    ) -> Self {
+    pub fn create_at(pos: Pos2, attributes: RectangleAttribute) -> Self {
         Rectangle {
             range: Rect::ZERO,
-            general_attributes,
             move_resize: MoveResize::resize(pos),
-            rect_attributes,
+            attributes,
         }
     }
 }
@@ -55,13 +76,12 @@ impl Shape for Rectangle {
         ui.painter().rect(
             render_range,
             CornerRadius::same(
-                (self.rect_attributes.radius * render_range.width().min(render_range.height()))
-                    as u8,
+                (self.attributes.radius * render_range.width().min(render_range.height())) as u8,
             ),
-            self.general_attributes.fill_color,
+            self.attributes.fill_color,
             Stroke::new(
-                self.general_attributes.line_width * render_info.pixel_ratio,
-                self.general_attributes.border_color,
+                self.attributes.line_width * render_info.pixel_ratio,
+                self.attributes.border_color,
             ),
             StrokeKind::Middle,
         );
@@ -70,21 +90,15 @@ impl Shape for Rectangle {
             true
         } else {
             let response = ui.allocate_rect(
-                render_range.expand(self.general_attributes.line_width / 2f32),
+                render_range.expand(self.attributes.line_width / 2f32),
                 Sense::click(),
             );
             response.clicked()
         }
     }
 
-    fn has_toolbar(&self) -> bool {
-        true
-    }
-
     fn toolbar_ui(&mut self, ui: &mut Ui) {
-        self.general_attributes.ui(ui, |ui| {
-            self.rect_attributes.ui(ui);
-        });
+        self.attributes.ui(ui);
     }
 
     fn on_create_response(&mut self, ui: &mut Ui, resp: &Response, render_info: &RenderInfo) {

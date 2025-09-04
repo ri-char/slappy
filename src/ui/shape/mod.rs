@@ -5,13 +5,14 @@ use eframe::egui::{Response, Ui};
 use crate::ui::RenderInfo;
 pub mod circle;
 pub mod line;
+pub mod number;
 pub mod rectangle;
+pub mod text;
 
 pub trait Shape {
     fn on_create_response(&mut self, ui: &mut Ui, resp: &Response, render_info: &RenderInfo);
     /// draw ui, and return `true` if it is actived
     fn ui(&mut self, ui: &mut Ui, is_active: bool, render_info: &RenderInfo) -> bool;
-    fn has_toolbar(&self) -> bool;
     fn toolbar_ui(&mut self, ui: &mut Ui);
 }
 
