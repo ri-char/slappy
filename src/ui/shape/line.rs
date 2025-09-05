@@ -1,12 +1,14 @@
 use eframe::egui::{
-    Checkbox, Label, Pos2, Rect, Response, Rgba, Sense, Slider, Stroke, Ui, Widget,
+    Checkbox, Label, Pos2, Rect, Response, Rgba, Slider, Stroke, Ui, Vec2, Widget,
     color_picker::{Alpha, color_edit_button_rgba},
     emath::Rot2,
 };
 use eframe::epaint::PathShape;
 
-use crate::{
-    ui::{RenderInfo, move_resize::LineMove, shape::Shape},
+use crate::ui::{
+    RenderInfo,
+    move_resize::{LineMove, hover_range},
+    shape::{CreateAt, Shape},
     utils::{from_ratio_pos, to_ratio_pos},
 };
 
@@ -65,33 +67,34 @@ pub struct Line {
     line_move: LineMove,
 }
 
-impl Line {
-    pub fn create_at(pos: Pos2, attributes: LineAttribute, render_info: &RenderInfo) -> Self {
-        Line {
+impl CreateAt for Line {
+    type Attr = LineAttribute;
+    fn create_at(pos: Pos2, attributes: LineAttribute, render_info: &RenderInfo) -> Box<dyn Shape> {
+        Box::new(Line {
             start_pos: to_ratio_pos(&pos, &render_info.screenshot_rect),
-            end_pos: to_ratio_pos(&pos, &render_info.screenshot_rect),
+            end_pos: to_ratio_pos(
+                &(pos + Vec2 { x: 30f32, y: 0f32 }),
+                &render_info.screenshot_rect,
+            ),
             attributes,
             line_move: Default::default(),
-        }
+        })
     }
 }
+fn render_arrow(ui: &mut Ui, start_pos: Pos2, end_pos: Pos2, stroke: Stroke, size: f32) {
+    let rot = Rot2::from_angle(std::f32::consts::TAU / 15.0);
+    let vec = end_pos - start_pos;
 
-impl Line {
-    fn render_arrow(ui: &mut Ui, start_pos: Pos2, end_pos: Pos2, stroke: Stroke, size: f32) {
-        let rot = Rot2::from_angle(std::f32::consts::TAU / 15.0);
-        let vec = end_pos - start_pos;
-
-        let dir = vec.normalized();
-        let pos1 = end_pos - size * (rot.inverse() * dir);
-        let pos2 = end_pos - size * (rot * dir);
-        let pos3 = end_pos - size * 0.7f32 * dir;
-        ui.painter().add(PathShape {
-            points: vec![pos1, end_pos, pos2, pos3],
-            closed: true,
-            fill: stroke.color,
-            stroke: stroke.into(),
-        });
-    }
+    let dir = vec.normalized();
+    let pos1 = end_pos - size * (rot.inverse() * dir);
+    let pos2 = end_pos - size * (rot * dir);
+    let pos3 = end_pos - size * 0.7f32 * dir;
+    ui.painter().add(PathShape {
+        points: vec![pos1, end_pos, pos2, pos3],
+        closed: true,
+        fill: stroke.color,
+        stroke: stroke.into(),
+    });
 }
 
 impl Shape for Line {
@@ -108,12 +111,12 @@ impl Shape for Line {
             .line_segment([render_start_pos, render_end_pos], stroke);
         if self.attributes.arrow_end {
             let tip_length = self.attributes.arrow_size * render_info.pixel_ratio;
-            Line::render_arrow(ui, render_start_pos, render_end_pos, stroke, tip_length);
+            render_arrow(ui, render_start_pos, render_end_pos, stroke, tip_length);
         }
 
         if self.attributes.arrow_start {
             let tip_length = self.attributes.arrow_size * render_info.pixel_ratio;
-            Line::render_arrow(ui, render_end_pos, render_start_pos, stroke, tip_length);
+            render_arrow(ui, render_end_pos, render_start_pos, stroke, tip_length);
         }
 
         if is_active {
@@ -126,11 +129,11 @@ impl Shape for Line {
             );
             true
         } else {
-            let response = ui.allocate_rect(
-                Rect::from_two_pos(render_start_pos, render_end_pos),
-                Sense::click(),
-            );
-            response.clicked()
+            hover_range(
+                ui,
+                Rect::from_two_pos(render_start_pos, render_end_pos).expand(2f32),
+                render_info.shot_mode,
+            )
         }
     }
 

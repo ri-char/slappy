@@ -1,23 +1,28 @@
 pub mod crop;
 pub mod move_resize;
 pub mod shape;
+pub mod utils;
 
 use std::io::{Cursor, Write};
 use std::sync::Arc;
 
 use eframe::egui::{self, Button, Image, Rect, Ui, Vec2, Widget, ahash::HashMap};
-use eframe::egui::{Color32, ColorImage, Context, Modifiers, Pos2, Response, RichText};
+use eframe::egui::{
+    Align2, Color32, ColorImage, Context, Modifiers, Pos2, Response, RichText, Spinner,
+};
 use egui::Key;
 use strum::IntoEnumIterator;
 use strum::{EnumIter, IntoStaticStr};
 
+use crate::ui::shape::CreateAt;
 use crate::ui::shape::circle::{Circle, CircleAttribute};
 use crate::ui::shape::line::{Line, LineAttribute};
 use crate::ui::shape::number::{Number, NumberAttribute};
+use crate::ui::shape::pen::{Pen, PenAttribute};
 use crate::ui::shape::rectangle::RectangleAttribute;
 use crate::ui::shape::text::{Text, TextAttribute};
 use crate::ui::shape::{ShapeId, rectangle::Rectangle};
-use crate::utils::from_ratio_rect;
+use utils::from_ratio_rect;
 
 #[derive(PartialEq, Eq, Clone, Copy, Default, EnumIter, IntoStaticStr)]
 enum Tool {
@@ -29,11 +34,13 @@ enum Tool {
     Line,
     Text,
     Number,
+    Pen,
 }
 
 pub struct RenderInfo {
     pub screenshot_rect: Rect,
     pub pixel_ratio: f32,
+    pub shot_mode: bool,
 }
 
 pub struct MyApp {
@@ -54,6 +61,7 @@ pub struct MyApp {
     line_attributes: LineAttribute,
     text_attributes: TextAttribute,
     number_attributes: NumberAttribute,
+    pen_attributes: PenAttribute,
 
     error_message: Option<String>,
 
@@ -75,6 +83,7 @@ impl MyApp {
             line_attributes: Default::default(),
             text_attributes: Default::default(),
             number_attributes: Default::default(),
+            pen_attributes: Default::default(),
             error_message: None,
             want_screenshot: false,
             want_screenshot_first_signal: false,
@@ -92,6 +101,7 @@ impl eframe::App for MyApp {
         let mut render_info = RenderInfo {
             screenshot_rect: Rect::ZERO,
             pixel_ratio: 1f32,
+            shot_mode: self.want_screenshot,
         };
         egui::CentralPanel::default()
             .frame(egui::containers::Frame::NONE)
@@ -138,6 +148,15 @@ impl MyApp {
             .ok()
             .and_then(|t| t.size());
         let resp = screenshot_image.ui(ui);
+
+        // render spinner if image is not load
+        if image_size.is_none() {
+            Spinner::new().paint_at(
+                ui,
+                Rect::from_center_size(ui.max_rect().center(), Vec2::splat(70f32)),
+            );
+        }
+
         let pixel_ratio = image_size.map_or(1f32, |v| resp.rect.width() / v.x);
         let screenshot_rect = resp.rect;
         (
@@ -145,6 +164,7 @@ impl MyApp {
             RenderInfo {
                 screenshot_rect,
                 pixel_ratio,
+                shot_mode: self.want_screenshot,
             },
         )
     }
@@ -207,6 +227,7 @@ impl MyApp {
                             Tool::Line => self.line_attributes.ui(ui),
                             Tool::Text => self.text_attributes.ui(ui),
                             Tool::Number => self.number_attributes.ui(ui),
+                            Tool::Pen => self.pen_attributes.ui(ui),
                         }
                     }
                 });
@@ -255,110 +276,54 @@ impl MyApp {
             Tool::Crop => {
                 self.crop_tool.on_global_response(ui, resp, render_info);
             }
-            Tool::Rect => {
-                if resp.clicked() {
-                    self.active_shape_id = None;
-                }
-                if resp.drag_started()
-                    && let Some(pos) = resp.interact_pointer_pos()
-                {
-                    let shape_id = ShapeId::new();
-                    let rect = Rectangle::create_at(pos, self.rect_attributes.clone());
-                    self.shapes.insert(shape_id, Box::new(rect));
-                    self.active_shape_id = Some(shape_id);
-                } else if (resp.drag_stopped() || resp.dragged())
-                    && let Some(active_shape) = self.active_shape()
-                {
-                    active_shape.on_create_response(ui, resp, render_info);
-                }
-            }
-            Tool::Circle => {
-                if resp.clicked() {
-                    self.active_shape_id = None;
-                }
-                if resp.drag_started()
-                    && let Some(pos) = resp.interact_pointer_pos()
-                {
-                    let shape_id = ShapeId::new();
-                    let circle = Circle::create_at(pos, self.circle_attributes.clone());
-                    self.shapes.insert(shape_id, Box::new(circle));
-                    self.active_shape_id = Some(shape_id);
-                } else if (resp.drag_stopped() || resp.dragged())
-                    && let Some(active_shape) = self.active_shape()
-                {
-                    active_shape.on_create_response(ui, resp, render_info);
-                }
-            }
-            Tool::Line => {
-                if resp.clicked() {
-                    self.active_shape_id = None;
-                }
-                if resp.drag_started()
-                    && let Some(pos) = resp.interact_pointer_pos()
-                {
-                    let shape_id = ShapeId::new();
-                    let line = Line::create_at(pos, self.line_attributes.clone(), render_info);
-                    self.shapes.insert(shape_id, Box::new(line));
-                    self.active_shape_id = Some(shape_id);
-                } else if (resp.drag_stopped() || resp.dragged())
-                    && let Some(active_shape) = self.active_shape()
-                {
-                    active_shape.on_create_response(ui, resp, render_info);
-                }
-            }
-            Tool::Text => {
-                if resp.clicked()
-                    && let Some(pos) = resp.interact_pointer_pos()
-                {
-                    if self.active_shape_id.is_some() {
-                        self.active_shape_id = None;
-                    } else {
-                        let shape_id = ShapeId::new();
-                        let text = Text::create_at(pos, self.text_attributes.clone(), render_info);
-                        self.shapes.insert(shape_id, Box::new(text));
-                        self.active_shape_id = Some(shape_id);
-                    }
-                }
-                if resp.drag_started()
-                    && let Some(pos) = resp.interact_pointer_pos()
-                {
-                    let shape_id = ShapeId::new();
-                    let text = Text::create_at(pos, self.text_attributes.clone(), render_info);
-                    self.shapes.insert(shape_id, Box::new(text));
-                    self.active_shape_id = Some(shape_id);
-                } else if (resp.drag_stopped() || resp.dragged())
-                    && let Some(active_shape) = self.active_shape()
-                {
-                    active_shape.on_create_response(ui, resp, render_info);
-                }
-            }
-            Tool::Number => {
-                if resp.clicked()
-                    && let Some(pos) = resp.interact_pointer_pos()
-                {
-                    if self.active_shape_id.is_some() {
-                        self.active_shape_id = None;
-                    } else {
-                        let shape_id = ShapeId::new();
-                        let text =
-                            Number::create_at(pos, self.number_attributes.clone(), render_info);
-                        self.shapes.insert(shape_id, Box::new(text));
-                        self.active_shape_id = Some(shape_id);
-                    }
-                }
-                if resp.drag_started()
-                    && let Some(pos) = resp.interact_pointer_pos()
-                {
-                    let shape_id = ShapeId::new();
-                    let text = Number::create_at(pos, self.number_attributes.clone(), render_info);
-                    self.shapes.insert(shape_id, Box::new(text));
-                    self.active_shape_id = Some(shape_id);
-                } else if (resp.drag_stopped() || resp.dragged())
-                    && let Some(active_shape) = self.active_shape()
-                {
-                    active_shape.on_create_response(ui, resp, render_info);
-                }
-            }
+            Tool::Rect => Rectangle::handle_create_response(
+                ui,
+                resp,
+                render_info,
+                &self.rect_attributes,
+                &mut self.active_shape_id,
+                &mut self.shapes,
+            ),
+            Tool::Circle => Circle::handle_create_response(
+                ui,
+                resp,
+                render_info,
+                &self.circle_attributes,
+                &mut self.active_shape_id,
+                &mut self.shapes,
+            ),
+            Tool::Line => Line::handle_create_response(
+                ui,
+                resp,
+                render_info,
+                &self.line_attributes,
+                &mut self.active_shape_id,
+                &mut self.shapes,
+            ),
+            Tool::Text => Text::handle_create_response(
+                ui,
+                resp,
+                render_info,
+                &self.text_attributes,
+                &mut self.active_shape_id,
+                &mut self.shapes,
+            ),
+            Tool::Number => Number::handle_create_response(
+                ui,
+                resp,
+                render_info,
+                &self.number_attributes,
+                &mut self.active_shape_id,
+                &mut self.shapes,
+            ),
+            Tool::Pen => Pen::handle_create_response(
+                ui,
+                resp,
+                render_info,
+                &self.pen_attributes,
+                &mut self.active_shape_id,
+                &mut self.shapes,
+            ),
             Tool::None => {}
         }
     }
@@ -408,6 +373,14 @@ impl MyApp {
             let mut open = true;
             egui::Window::new("Error")
                 .collapsible(false)
+                .resizable(false)
+                .anchor(
+                    Align2::RIGHT_TOP,
+                    Vec2 {
+                        x: -30f32,
+                        y: 30f32,
+                    },
+                )
                 .open(&mut open)
                 .show(ctx, |ui| {
                     ui.label(RichText::new(error_message).color(Color32::RED))

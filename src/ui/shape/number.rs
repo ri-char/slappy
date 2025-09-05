@@ -1,19 +1,22 @@
 use std::sync::atomic::AtomicU32;
 
+use eframe::egui::TextEdit;
 use eframe::epaint::PathShape;
 use eframe::{
     egui::{
-        Align2, DragValue, FontFamily, FontId, Label, Pos2, Rect, Response, Rgba, Sense, Slider,
-        Stroke, Ui, Vec2, Widget,
+        Align2, FontFamily, FontId, Label, Pos2, Rect, Response, Rgba, Slider, Stroke, Ui, Vec2,
+        Widget,
         color_picker::{Alpha, color_edit_button_rgba},
         emath::Rot2,
     },
     epaint::PathStroke,
 };
 
+use crate::ui::move_resize::hover_range;
+use crate::ui::shape::CreateAt;
 use crate::{
+    ui::utils::{from_ratio_pos, to_ratio_pos},
     ui::{RenderInfo, move_resize::LineMove, shape::Shape},
-    utils::{from_ratio_pos, to_ratio_pos},
 };
 
 #[derive(Clone)]
@@ -29,8 +32,8 @@ impl Default for NumberAttribute {
         Self {
             fill_color: Rgba::RED,
             text_color: Rgba::WHITE,
-            circle_size: 25f32,
-            font_size: 15f32,
+            circle_size: 20f32,
+            font_size: 20f32,
         }
     }
 }
@@ -61,23 +64,28 @@ pub struct Number {
     pub end_pos: Pos2,
 
     pub attributes: NumberAttribute,
-    pub number: u32,
+    pub number: String,
 
     line_move: LineMove,
 }
 
-impl Number {
-    pub fn create_at(pos: Pos2, attributes: NumberAttribute, render_info: &RenderInfo) -> Self {
+impl CreateAt for Number {
+    type Attr = NumberAttribute;
+
+    fn create_at(
+        pos: Pos2,
+        attributes: NumberAttribute,
+        render_info: &RenderInfo,
+    ) -> Box<dyn Shape> {
         static INC_NUMBER_BITMAP: AtomicU32 = AtomicU32::new(1);
         let n = INC_NUMBER_BITMAP.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
-
-        Number {
+        Box::new(Number {
             start_pos: to_ratio_pos(&pos, &render_info.screenshot_rect),
             end_pos: to_ratio_pos(&pos, &render_info.screenshot_rect),
             attributes,
             line_move: Default::default(),
-            number: n,
-        }
+            number: n.to_string(),
+        })
     }
 }
 
@@ -110,7 +118,7 @@ impl Shape for Number {
         ui.painter().text(
             render_start_pos,
             Align2::CENTER_CENTER,
-            self.number,
+            &self.number,
             FontId::new(self.attributes.font_size, FontFamily::Proportional),
             self.attributes.text_color.into(),
         );
@@ -129,9 +137,7 @@ impl Shape for Number {
                 Rect::from_center_size(render_start_pos, Vec2::splat(circle_radius * 2f32));
             render_range.extend_with(render_end_pos);
             let render_range = render_range.expand(2f32);
-            let resp = ui.allocate_rect(render_range, Sense::click());
-
-            resp.clicked()
+            hover_range(ui, render_range, render_info.shot_mode)
         }
     }
 
@@ -139,7 +145,7 @@ impl Shape for Number {
         self.attributes.ui(ui);
 
         Label::new("Number").selectable(false).ui(ui);
-        DragValue::new(&mut self.number).range(0u32..=128u32).ui(ui);
+        TextEdit::singleline(&mut self.number).ui(ui);
         ui.end_row();
     }
 

@@ -1,15 +1,13 @@
 use eframe::egui::{
-    CornerRadius, Label, Pos2, Rect, Response, Rgba, Sense, Slider, Stroke, StrokeKind, Ui, Widget,
+    CornerRadius, Label, Pos2, Rect, Response, Rgba, Slider, Stroke, StrokeKind, Ui, Vec2, Widget,
     color_picker::{Alpha, color_edit_button_rgba},
 };
 
-use crate::{
-    ui::{
-        RenderInfo,
-        move_resize::{MoveResize, ResizeMode},
-        shape::Shape,
-    },
-    utils::from_ratio_rect,
+use crate::ui::{
+    RenderInfo,
+    move_resize::{MoveResize, ResizeMode, hover_range},
+    shape::{CreateAt, Shape},
+    utils::{from_ratio_rect, to_ratio_rect},
 };
 
 #[derive(Clone)]
@@ -60,13 +58,21 @@ pub struct Rectangle {
     move_resize: MoveResize,
 }
 
-impl Rectangle {
-    pub fn create_at(pos: Pos2, attributes: RectangleAttribute) -> Self {
-        Rectangle {
-            range: Rect::ZERO,
+impl CreateAt for Rectangle {
+    type Attr = RectangleAttribute;
+    fn create_at(
+        pos: Pos2,
+        attributes: RectangleAttribute,
+        render_info: &RenderInfo,
+    ) -> Box<dyn Shape> {
+        Box::new(Rectangle {
+            range: to_ratio_rect(
+                &Rect::from_min_max(pos, pos + Vec2::splat(30f32)),
+                &render_info.screenshot_rect,
+            ),
             move_resize: MoveResize::resize(pos),
             attributes,
-        }
+        })
     }
 }
 
@@ -89,11 +95,11 @@ impl Shape for Rectangle {
             self.move_resize.ui(ui, render_info, &mut self.range);
             true
         } else {
-            let response = ui.allocate_rect(
-                render_range.expand(self.attributes.line_width / 2f32),
-                Sense::click(),
-            );
-            response.clicked()
+            hover_range(
+                ui,
+                render_range.expand(self.attributes.line_width / 2f32 + 2f32),
+                render_info.shot_mode,
+            )
         }
     }
 

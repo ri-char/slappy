@@ -4,8 +4,10 @@ use eframe::egui::{
     color_picker::{Alpha, color_edit_button_rgba},
 };
 
-use crate::{
-    ui::{RenderInfo, shape::Shape},
+use crate::ui::{
+    RenderInfo,
+    move_resize::{hover_range, key_arrow_to_offset},
+    shape::{CreateAt, Shape},
     utils::{from_ratio_pos, to_ratio_pos},
 };
 
@@ -42,10 +44,7 @@ impl TextAttribute {
         ComboBox::from_id_salt("font_family")
             .selected_text(format!("{}", self.family))
             .show_ui(ui, |ui| {
-                for f in ui
-                    .ctx()
-                    .fonts(|f| f.families().iter().cloned().collect::<Vec<_>>())
-                {
+                for f in ui.ctx().fonts(|f| f.families().to_vec()) {
                     ui.selectable_value(&mut self.family, f.clone(), f.to_string());
                 }
             });
@@ -53,7 +52,7 @@ impl TextAttribute {
         ui.end_row();
 
         Label::new("Font Size").selectable(false).ui(ui);
-        Slider::new(&mut self.size, 0f32..=100f32).ui(ui);
+        Slider::new(&mut self.size, 0f32..=200f32).ui(ui);
         ui.end_row();
     }
 }
@@ -65,15 +64,20 @@ pub struct Text {
     pub attributes: TextAttribute,
 }
 
-impl Text {
-    pub fn create_at(pos: Pos2, mut attributes: TextAttribute, render_info: &RenderInfo) -> Self {
+impl CreateAt for Text {
+    type Attr = TextAttribute;
+    fn create_at(
+        pos: Pos2,
+        mut attributes: TextAttribute,
+        render_info: &RenderInfo,
+    ) -> Box<dyn Shape> {
         if attributes.text.trim().is_empty() {
             attributes.text = "Edit Text here".to_string();
         }
-        Text {
+        Box::new(Text {
             pos: to_ratio_pos(&pos, &render_info.screenshot_rect),
             attributes,
-        }
+        })
     }
 }
 
@@ -89,6 +93,10 @@ impl Shape for Text {
         );
 
         if is_active {
+            if let Some(offset) = key_arrow_to_offset(ui) {
+                self.pos = to_ratio_pos(&(render_pos + offset), &render_info.screenshot_rect);
+            }
+
             ui.painter().rect_stroke(
                 render_range.expand(2f32),
                 CornerRadius::ZERO,
@@ -102,8 +110,7 @@ impl Shape for Text {
             self.on_create_response(ui, &response, render_info);
             true
         } else {
-            let response = ui.allocate_rect(render_range.expand(2f32), Sense::click());
-            response.clicked()
+            hover_range(ui, render_range.expand(2f32), render_info.shot_mode)
         }
     }
 

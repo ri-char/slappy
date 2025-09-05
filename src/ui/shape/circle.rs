@@ -1,18 +1,16 @@
 use eframe::{
     egui::{
-        Label, Pos2, Rect, Response, Rgba, Sense, Slider, Stroke, Ui, Widget,
+        Label, Pos2, Rect, Response, Rgba, Slider, Stroke, Ui, Vec2, Widget,
         color_picker::{Alpha, color_edit_button_rgba},
     },
     epaint::EllipseShape,
 };
 
-use crate::{
-    ui::{
-        RenderInfo,
-        move_resize::{MoveResize, ResizeMode},
-        shape::Shape,
-    },
-    utils::from_ratio_rect,
+use crate::ui::{
+    RenderInfo,
+    move_resize::{MoveResize, ResizeMode, hover_range},
+    shape::{CreateAt, Shape},
+    utils::{from_ratio_rect, to_ratio_rect},
 };
 
 #[derive(Clone)]
@@ -56,13 +54,17 @@ pub struct Circle {
     move_resize: MoveResize,
 }
 
-impl Circle {
-    pub fn create_at(pos: Pos2, attr: CircleAttribute) -> Self {
-        Circle {
-            range: Rect::ZERO,
+impl CreateAt for Circle {
+    type Attr = CircleAttribute;
+    fn create_at(pos: Pos2, attr: CircleAttribute, render_info: &RenderInfo) -> Box<dyn Shape> {
+        Box::new(Circle {
+            range: to_ratio_rect(
+                &Rect::from_min_max(pos, pos + Vec2::splat(30f32)),
+                &render_info.screenshot_rect,
+            ),
             attributes: attr,
             move_resize: MoveResize::resize(pos),
-        }
+        })
     }
 }
 
@@ -82,8 +84,11 @@ impl Shape for Circle {
             self.move_resize.ui(ui, render_info, &mut self.range);
             true
         } else {
-            let response = ui.allocate_rect(render_range, Sense::click());
-            response.clicked()
+            hover_range(
+                ui,
+                render_range.expand(self.attributes.line_width / 2f32 + 2f32),
+                render_info.shot_mode,
+            )
         }
     }
 

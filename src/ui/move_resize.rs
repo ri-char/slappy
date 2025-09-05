@@ -1,10 +1,11 @@
 use eframe::egui::{
-    Color32, CursorIcon, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui, Vec2,
+    Color32, CornerRadius, CursorIcon, Key, Pos2, Rect, Response, Sense, Stroke, StrokeKind, Ui,
+    Vec2,
 };
 
 use crate::{
     ui::RenderInfo,
-    utils::{from_ratio_pos, from_ratio_rect, to_ratio_pos, to_ratio_rect},
+    ui::utils::{from_ratio_pos, from_ratio_rect, to_ratio_pos, to_ratio_rect},
 };
 
 const DEFAULT_INTERACT_RANGE: f32 = 10f32;
@@ -57,6 +58,14 @@ impl MoveResize {
 
     pub fn ui(&mut self, ui: &mut Ui, render_info: &RenderInfo, rect: &mut Rect) {
         let render_range = from_ratio_rect(rect, &render_info.screenshot_rect);
+
+        if let Some(offset) = key_arrow_to_offset(ui) {
+            *rect = to_ratio_rect(
+                &render_range.translate(offset),
+                &render_info.screenshot_rect,
+            );
+        }
+
         let resp = ui
             .allocate_rect(render_range, Sense::drag())
             .on_hover_cursor(CursorIcon::Grab);
@@ -278,6 +287,11 @@ impl LineMove {
         let render_start_pos = from_ratio_pos(pos_start, &render_info.screenshot_rect);
         let render_end_pos = from_ratio_pos(pos_end, &render_info.screenshot_rect);
 
+        if let Some(offset) = key_arrow_to_offset(ui) {
+            *pos_start = to_ratio_pos(&(render_start_pos + offset), &render_info.screenshot_rect);
+            *pos_end = to_ratio_pos(&(render_end_pos + offset), &render_info.screenshot_rect);
+        }
+
         let mut render_range =
             Rect::from_center_size(render_start_pos, Vec2::splat(expand_start * 2f32));
         render_range.extend_with(render_end_pos);
@@ -285,15 +299,7 @@ impl LineMove {
         let resp = ui
             .allocate_rect(render_range, Sense::drag())
             .on_hover_cursor(CursorIcon::Grab);
-        self.handle_move(
-            ui,
-            &resp,
-            render_info,
-            pos_start,
-            pos_end,
-            &render_start_pos,
-            &render_end_pos,
-        );
+        self.handle_move(ui, &resp, render_info, pos_start, pos_end);
 
         let handle = add_control_point(
             ui,
@@ -354,15 +360,15 @@ impl LineMove {
         render_info: &RenderInfo,
         pos_start: &mut Pos2,
         pos_end: &mut Pos2,
-        render_start_pos: &Pos2,
-        render_end_pos: &Pos2,
     ) {
         if resp.dragged()
             && let Some(current_pos) = resp.interact_pointer_pos()
         {
+            let render_start_pos = from_ratio_pos(pos_start, &render_info.screenshot_rect);
+            let render_end_pos = from_ratio_pos(pos_end, &render_info.screenshot_rect);
             if resp.drag_started() {
-                self.line = *render_end_pos - *render_start_pos;
-                self.offset = current_pos - *render_start_pos;
+                self.line = render_end_pos - render_start_pos;
+                self.offset = current_pos - render_start_pos;
             }
             ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
             let start = current_pos - self.offset;
@@ -401,21 +407,66 @@ fn calc_pos_with_shfit_modifier(
 fn add_control_point(ui: &mut Ui, pos: Pos2, icon: CursorIcon, interact_range: f32) -> Response {
     const FILL_COLOR: Color32 = Color32::from_gray(0xee);
     const RADIUS: f32 = 6f32;
+    const HOVER_RADIUS: f32 = 10f32;
 
     const STROKE: Stroke = Stroke {
         width: 1.0f32,
         color: Color32::from_gray(0xe),
     };
+
+    let resp = ui
+        .allocate_rect(
+            Rect::from_center_size(pos, Vec2::splat(interact_range)),
+            Sense::drag(),
+        )
+        .on_hover_cursor(icon);
+
+    let control_point_size = Vec2::splat(if resp.hovered() { HOVER_RADIUS } else { RADIUS });
     ui.painter().rect(
-        Rect::from_center_size(pos, Vec2::splat(RADIUS)),
+        Rect::from_center_size(pos, control_point_size),
         0f32,
         FILL_COLOR,
         STROKE,
         StrokeKind::Middle,
     );
-    ui.allocate_rect(
-        Rect::from_center_size(pos, Vec2::splat(interact_range)),
-        Sense::drag(),
-    )
-    .on_hover_cursor(icon)
+    resp
+}
+
+pub fn key_arrow_to_offset(ui: &Ui) -> Option<Vec2> {
+    ui.input(|i| {
+        let mut res = Vec2::ZERO;
+        let mut key_pressed = false;
+        const MOVE_UNIT: f32 = 3f32;
+
+        if i.key_pressed(Key::ArrowDown) {
+            res.y += MOVE_UNIT;
+            key_pressed = true;
+        }
+        if i.key_pressed(Key::ArrowUp) {
+            res.y -= MOVE_UNIT;
+            key_pressed = true;
+        }
+        if i.key_pressed(Key::ArrowLeft) {
+            res.x -= MOVE_UNIT;
+            key_pressed = true;
+        }
+        if i.key_pressed(Key::ArrowRight) {
+            res.x += MOVE_UNIT;
+            key_pressed = true;
+        }
+        key_pressed.then_some(res)
+    })
+}
+
+pub fn hover_range(ui: &mut Ui, range: Rect, shot_mode: bool) -> bool {
+    let response = ui.allocate_rect(range, Sense::click());
+    if !shot_mode && response.hovered() {
+        ui.painter().rect_stroke(
+            range,
+            CornerRadius::ZERO,
+            Stroke::new(1f32, Color32::GRAY),
+            StrokeKind::Middle,
+        );
+    }
+    response.clicked()
 }
