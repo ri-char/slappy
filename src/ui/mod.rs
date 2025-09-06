@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Button, Image, Rect, Ui, Vec2, Widget, ahash::HashMap};
 use eframe::egui::{
-    Align2, Color32, ColorImage, Context, FontFamily, Modifiers, Pos2, Response, RichText, Spinner
+    Align2, Color32, ColorImage, Context, FontFamily, Modifiers, Pos2, Response, RichText, Spinner,
 };
 use egui::Key;
 use strum::IntoEnumIterator;
@@ -227,7 +227,9 @@ impl MyApp {
                             Tool::Circle => self.circle_attributes.ui(ui),
                             Tool::Rect => self.rect_attributes.ui(ui),
                             Tool::Line => self.line_attributes.ui(ui),
-                            Tool::Text => self.text_attributes.ui(ui, render_info.user_font.clone()),
+                            Tool::Text => {
+                                self.text_attributes.ui(ui, render_info.user_font.clone())
+                            }
                             Tool::Number => self.number_attributes.ui(ui),
                             Tool::Pen => self.pen_attributes.ui(ui),
                         }

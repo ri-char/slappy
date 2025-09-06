@@ -32,6 +32,8 @@ pub struct Arg {
 
 fn main() -> Result<()> {
     env_logger::init();
+    let arg = Arg::parse();
+
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
             .with_always_on_top()
@@ -39,8 +41,6 @@ fn main() -> Result<()> {
             .with_fullscreen(true),
         ..Default::default()
     };
-
-    let arg = Arg::parse();
 
     let image_data = if arg.input == "-" {
         let mut image_data = Vec::new();

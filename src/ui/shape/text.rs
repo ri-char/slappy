@@ -1,5 +1,7 @@
 use eframe::egui::{
-    color_picker::{color_edit_button_rgba, Alpha}, Align2, Color32, CornerRadius, CursorIcon, FontFamily, FontId, FontSelection, Label, Pos2, Response, Rgba, Sense, Slider, Stroke, StrokeKind, TextEdit, Ui, Widget
+    Align2, Color32, CornerRadius, CursorIcon, FontFamily, FontId, FontSelection, Label, Pos2,
+    Response, Rgba, Sense, Slider, Stroke, StrokeKind, TextEdit, Ui, Widget,
+    color_picker::{Alpha, color_edit_button_rgba},
 };
 
 use crate::ui::{
@@ -33,7 +35,9 @@ impl TextAttribute {
         ui.end_row();
 
         Label::new("Text").selectable(false).ui(ui);
-        TextEdit::multiline(&mut self.text).font(FontSelection::FontId(FontId::new(12f32, font_family))).ui(ui);
+        TextEdit::multiline(&mut self.text)
+            .font(FontSelection::FontId(FontId::new(12f32, font_family)))
+            .ui(ui);
         ui.end_row();
 
         Label::new("Font Size").selectable(false).ui(ui);
@@ -47,7 +51,6 @@ pub struct Text {
 
     pub attributes: TextAttribute,
 }
-
 
 impl CreateAt for Text {
     type Attr = TextAttribute;
@@ -69,7 +72,7 @@ impl CreateAt for Text {
 impl Shape for Text {
     fn ui(&mut self, ui: &mut Ui, is_active: bool, render_info: &RenderInfo) -> bool {
         let render_pos = from_ratio_pos(&self.pos, &render_info.screenshot_rect);
-        
+
         let render_range = ui.painter().text(
             render_pos,
             Align2::CENTER_CENTER,

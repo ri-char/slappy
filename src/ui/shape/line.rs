@@ -81,21 +81,6 @@ impl CreateAt for Line {
         })
     }
 }
-fn render_arrow(ui: &mut Ui, start_pos: Pos2, end_pos: Pos2, stroke: Stroke, size: f32) {
-    let rot = Rot2::from_angle(std::f32::consts::TAU / 15.0);
-    let vec = end_pos - start_pos;
-
-    let dir = vec.normalized();
-    let pos1 = end_pos - size * (rot.inverse() * dir);
-    let pos2 = end_pos - size * (rot * dir);
-    let pos3 = end_pos - size * 0.7f32 * dir;
-    ui.painter().add(PathShape {
-        points: vec![pos1, end_pos, pos2, pos3],
-        closed: true,
-        fill: stroke.color,
-        stroke: stroke.into(),
-    });
-}
 
 impl Shape for Line {
     fn ui(&mut self, ui: &mut Ui, is_active: bool, render_info: &RenderInfo) -> bool {
@@ -109,14 +94,33 @@ impl Shape for Line {
 
         ui.painter()
             .line_segment([render_start_pos, render_end_pos], stroke);
+
+        let tip_length = self.attributes.arrow_size * render_info.pixel_ratio;
+        let mut render_range = Rect::from_two_pos(render_start_pos, render_end_pos);
+        let mut render_arrow = |start_pos: Pos2, end_pos: Pos2| {
+            let rot = Rot2::from_angle(std::f32::consts::TAU / 15.0);
+            let vec = end_pos - start_pos;
+
+            let dir = vec.normalized();
+            let pos1 = end_pos - tip_length * (rot.inverse() * dir);
+            let pos2 = end_pos - tip_length * (rot * dir);
+            let pos3 = end_pos - tip_length * 0.7f32 * dir;
+            render_range.extend_with(pos1);
+            render_range.extend_with(pos2);
+            ui.painter().add(PathShape {
+                points: vec![pos1, end_pos, pos2, pos3],
+                closed: true,
+                fill: stroke.color,
+                stroke: stroke.into(),
+            });
+        };
+
         if self.attributes.arrow_end {
-            let tip_length = self.attributes.arrow_size * render_info.pixel_ratio;
-            render_arrow(ui, render_start_pos, render_end_pos, stroke, tip_length);
+            render_arrow(render_start_pos, render_end_pos);
         }
 
         if self.attributes.arrow_start {
-            let tip_length = self.attributes.arrow_size * render_info.pixel_ratio;
-            render_arrow(ui, render_end_pos, render_start_pos, stroke, tip_length);
+            render_arrow(render_end_pos, render_start_pos);
         }
 
         if is_active {
@@ -129,11 +133,7 @@ impl Shape for Line {
             );
             true
         } else {
-            hover_range(
-                ui,
-                Rect::from_two_pos(render_start_pos, render_end_pos).expand(2f32),
-                render_info.shot_mode,
-            )
+            hover_range(ui, render_range.expand(2f32), render_info.shot_mode)
         }
     }
 
