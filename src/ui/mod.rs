@@ -8,12 +8,13 @@ use std::sync::Arc;
 
 use eframe::egui::{self, Button, Image, Rect, Ui, Vec2, Widget, ahash::HashMap};
 use eframe::egui::{
-    Align2, Color32, ColorImage, Context, Modifiers, Pos2, Response, RichText, Spinner,
+    Align2, Color32, ColorImage, Context, FontFamily, Modifiers, Pos2, Response, RichText, Spinner
 };
 use egui::Key;
 use strum::IntoEnumIterator;
 use strum::{EnumIter, IntoStaticStr};
 
+use crate::Arg;
 use crate::ui::shape::CreateAt;
 use crate::ui::shape::circle::{Circle, CircleAttribute};
 use crate::ui::shape::line::{Line, LineAttribute};
@@ -40,6 +41,7 @@ enum Tool {
 pub struct RenderInfo {
     pub screenshot_rect: Rect,
     pub pixel_ratio: f32,
+    pub user_font: FontFamily,
     pub shot_mode: bool,
 }
 
@@ -68,10 +70,13 @@ pub struct MyApp {
     want_screenshot: bool,
     want_screenshot_first_signal: bool,
     screenshot_copy: bool,
+    user_font: FontFamily,
+
+    arg: Arg,
 }
 
 impl MyApp {
-    pub fn new(raw_screenshot: Vec<u8>) -> Self {
+    pub fn new(raw_screenshot: Vec<u8>, user_font: FontFamily, arg: Arg) -> Self {
         Self {
             raw_screenshot_texture: egui::load::Bytes::from(raw_screenshot),
             selected_tool: Default::default(),
@@ -85,9 +90,11 @@ impl MyApp {
             number_attributes: Default::default(),
             pen_attributes: Default::default(),
             error_message: None,
+            user_font,
             want_screenshot: false,
             want_screenshot_first_signal: false,
             screenshot_copy: false,
+            arg,
         }
     }
 
@@ -101,13 +108,13 @@ impl eframe::App for MyApp {
         let mut render_info = RenderInfo {
             screenshot_rect: Rect::ZERO,
             pixel_ratio: 1f32,
+            user_font: self.user_font.clone(),
             shot_mode: self.want_screenshot,
         };
         egui::CentralPanel::default()
             .frame(egui::containers::Frame::NONE)
             .show(ctx, |ui| {
-                let (resp, render_info_tmp) = self.ui_background(ui);
-                render_info = render_info_tmp;
+                let resp = self.ui_background(ui, &mut render_info);
 
                 // render all shapes
                 self.ui_shape(ui, &render_info);
@@ -137,7 +144,7 @@ impl eframe::App for MyApp {
 }
 
 impl MyApp {
-    fn ui_background(&mut self, ui: &mut Ui) -> (Response, RenderInfo) {
+    fn ui_background(&mut self, ui: &mut Ui, render_info: &mut RenderInfo) -> Response {
         let screenshot_image =
             Image::from_bytes("bytes://picture", self.raw_screenshot_texture.clone())
                 .fit_to_original_size(1f32 / ui.ctx().pixels_per_point())
@@ -159,14 +166,9 @@ impl MyApp {
 
         let pixel_ratio = image_size.map_or(1f32, |v| resp.rect.width() / v.x);
         let screenshot_rect = resp.rect;
-        (
-            resp,
-            RenderInfo {
-                screenshot_rect,
-                pixel_ratio,
-                shot_mode: self.want_screenshot,
-            },
-        )
+        render_info.screenshot_rect = screenshot_rect;
+        render_info.pixel_ratio = pixel_ratio;
+        resp
     }
 
     fn ui_toolbar(&mut self, ctx: &Context, render_info: &RenderInfo) {
@@ -218,14 +220,14 @@ impl MyApp {
                 ui.separator();
                 egui::Grid::new("attributes").show(ui, |ui| {
                     if let Some(active_shape) = self.active_shape() {
-                        active_shape.toolbar_ui(ui);
+                        active_shape.toolbar_ui(ui, render_info);
                     } else {
                         match self.selected_tool {
                             Tool::None | Tool::Crop => {}
                             Tool::Circle => self.circle_attributes.ui(ui),
                             Tool::Rect => self.rect_attributes.ui(ui),
                             Tool::Line => self.line_attributes.ui(ui),
-                            Tool::Text => self.text_attributes.ui(ui),
+                            Tool::Text => self.text_attributes.ui(ui, render_info.user_font.clone()),
                             Tool::Number => self.number_attributes.ui(ui),
                             Tool::Pen => self.pen_attributes.ui(ui),
                         }
@@ -357,10 +359,11 @@ impl MyApp {
                     cropped_range,
                     pixels_per_point,
                     self.screenshot_copy,
+                    &self.arg.output,
                     ctx,
                 ) {
                     self.error_message = Some(e.to_string());
-                } else {
+                } else if self.arg.exit {
                     ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             }
@@ -397,12 +400,13 @@ fn save_image_as_file(
     cropped_range: Rect,
     pixels_per_point: f32,
     copy: bool,
+    output_path: &str,
     ctx: &Context,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let cropped = image.region(&cropped_range, Some(pixels_per_point));
     if copy {
         ctx.copy_image(cropped);
-    } else {
+    } else if output_path == "-" {
         let mut cursor = Cursor::new(Vec::new());
         image::write_buffer_with_format(
             &mut cursor,
@@ -415,6 +419,14 @@ fn save_image_as_file(
         cursor.flush()?;
         cursor.set_position(0);
         std::io::copy(&mut cursor, &mut std::io::stdout())?;
+    } else {
+        image::save_buffer(
+            output_path,
+            cropped.as_raw(),
+            cropped.width() as u32,
+            cropped.height() as u32,
+            image::ColorType::Rgba8,
+        )?;
     }
     Ok(())
 }

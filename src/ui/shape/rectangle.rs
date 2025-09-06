@@ -103,7 +103,7 @@ impl Shape for Rectangle {
         }
     }
 
-    fn toolbar_ui(&mut self, ui: &mut Ui) {
+    fn toolbar_ui(&mut self, ui: &mut Ui, _render_info: &RenderInfo) {
         self.attributes.ui(ui);
     }
 

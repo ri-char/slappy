@@ -1,7 +1,5 @@
 use eframe::egui::{
-    Align2, Color32, ComboBox, CornerRadius, CursorIcon, FontFamily, FontId, Label, Pos2, Response,
-    Rgba, Sense, Slider, Stroke, StrokeKind, TextEdit, Ui, Widget,
-    color_picker::{Alpha, color_edit_button_rgba},
+    color_picker::{color_edit_button_rgba, Alpha}, Align2, Color32, CornerRadius, CursorIcon, FontFamily, FontId, FontSelection, Label, Pos2, Response, Rgba, Sense, Slider, Stroke, StrokeKind, TextEdit, Ui, Widget
 };
 
 use crate::ui::{
@@ -15,7 +13,6 @@ use crate::ui::{
 pub struct TextAttribute {
     color: Rgba,
     text: String,
-    family: FontFamily,
     size: f32,
 }
 
@@ -25,30 +22,18 @@ impl Default for TextAttribute {
             color: Rgba::RED,
             text: "Edit Text here".to_string(),
             size: 20f32,
-            family: FontFamily::Proportional,
         }
     }
 }
 
 impl TextAttribute {
-    pub fn ui(&mut self, ui: &mut Ui) {
+    pub fn ui(&mut self, ui: &mut Ui, font_family: FontFamily) {
         Label::new("Text Color").selectable(false).ui(ui);
         color_edit_button_rgba(ui, &mut self.color, Alpha::OnlyBlend);
         ui.end_row();
 
         Label::new("Text").selectable(false).ui(ui);
-        TextEdit::multiline(&mut self.text).ui(ui);
-        ui.end_row();
-
-        Label::new("Font Family").selectable(false).ui(ui);
-        ComboBox::from_id_salt("font_family")
-            .selected_text(format!("{}", self.family))
-            .show_ui(ui, |ui| {
-                for f in ui.ctx().fonts(|f| f.families().to_vec()) {
-                    ui.selectable_value(&mut self.family, f.clone(), f.to_string());
-                }
-            });
-
+        TextEdit::multiline(&mut self.text).font(FontSelection::FontId(FontId::new(12f32, font_family))).ui(ui);
         ui.end_row();
 
         Label::new("Font Size").selectable(false).ui(ui);
@@ -57,12 +42,12 @@ impl TextAttribute {
     }
 }
 
-#[derive(Clone)]
 pub struct Text {
     pub pos: Pos2,
 
     pub attributes: TextAttribute,
 }
+
 
 impl CreateAt for Text {
     type Attr = TextAttribute;
@@ -84,11 +69,12 @@ impl CreateAt for Text {
 impl Shape for Text {
     fn ui(&mut self, ui: &mut Ui, is_active: bool, render_info: &RenderInfo) -> bool {
         let render_pos = from_ratio_pos(&self.pos, &render_info.screenshot_rect);
+        
         let render_range = ui.painter().text(
             render_pos,
             Align2::CENTER_CENTER,
             self.attributes.text.as_str(),
-            FontId::new(self.attributes.size, self.attributes.family.clone()),
+            FontId::new(self.attributes.size, render_info.user_font.clone()),
             self.attributes.color.into(),
         );
 
@@ -114,8 +100,8 @@ impl Shape for Text {
         }
     }
 
-    fn toolbar_ui(&mut self, ui: &mut Ui) {
-        self.attributes.ui(ui);
+    fn toolbar_ui(&mut self, ui: &mut Ui, render_info: &RenderInfo) {
+        self.attributes.ui(ui, render_info.user_font.clone());
     }
 
     fn on_create_response(&mut self, ui: &mut Ui, resp: &Response, render_info: &RenderInfo) {

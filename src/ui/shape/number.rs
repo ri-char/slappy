@@ -141,7 +141,7 @@ impl Shape for Number {
         }
     }
 
-    fn toolbar_ui(&mut self, ui: &mut Ui) {
+    fn toolbar_ui(&mut self, ui: &mut Ui, _render_info: &RenderInfo) {
         self.attributes.ui(ui);
 
         Label::new("Number").selectable(false).ui(ui);

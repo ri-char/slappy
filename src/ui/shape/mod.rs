@@ -14,7 +14,7 @@ pub trait Shape {
     fn on_create_response(&mut self, ui: &mut Ui, resp: &Response, render_info: &RenderInfo);
     /// draw ui, and return `true` if it is actived
     fn ui(&mut self, ui: &mut Ui, is_active: bool, render_info: &RenderInfo) -> bool;
-    fn toolbar_ui(&mut self, ui: &mut Ui);
+    fn toolbar_ui(&mut self, ui: &mut Ui, render_info: &RenderInfo);
 }
 
 pub trait CreateAt: Shape {
