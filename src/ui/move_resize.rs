@@ -163,7 +163,9 @@ impl MoveResize {
                     }
                     ResizeMode::Cursor => {
                         if let Some(fixed_pos) = resp.interact_pointer_pos() {
-                            self.state = MoveResizeState::Resize { fixed_pos };
+                            self.state = MoveResizeState::Resize {
+                                fixed_pos: fixed_pos - resp.drag_motion(),
+                            };
                         }
                     }
                     ResizeMode::None => {}
@@ -209,7 +211,7 @@ impl MoveResize {
             if resp.drag_started() {
                 let render_range = from_ratio_rect(rect, &render_info.screenshot_rect);
                 self.state = MoveResizeState::Move {
-                    offset: current_pos - render_range.min,
+                    offset: current_pos - resp.drag_motion() - render_range.min,
                     size: render_range.size(),
                 };
             }
@@ -368,7 +370,7 @@ impl LineMove {
             let render_end_pos = from_ratio_pos(pos_end, &render_info.screenshot_rect);
             if resp.drag_started() {
                 self.line = render_end_pos - render_start_pos;
-                self.offset = current_pos - render_start_pos;
+                self.offset = current_pos - resp.drag_motion() - render_start_pos;
             }
             ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
             let start = current_pos - self.offset;

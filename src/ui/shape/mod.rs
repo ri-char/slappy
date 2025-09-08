@@ -44,7 +44,10 @@ pub trait CreateAt: Shape {
             && let Some(pos) = resp.interact_pointer_pos()
         {
             let shape_id = ShapeId::new();
-            shapes.insert(shape_id, Self::create_at(pos, attr.clone(), render_info));
+            shapes.insert(
+                shape_id,
+                Self::create_at(pos - resp.drag_motion(), attr.clone(), render_info),
+            );
             *active_shape_id = Some(shape_id);
         } else if (resp.drag_stopped() || resp.dragged())
             && let Some(active_shape) = active_shape_id.and_then(|id| shapes.get_mut(&id))
