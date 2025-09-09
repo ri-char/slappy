@@ -1,9 +1,6 @@
 use eframe::egui::{Color32, CornerRadius, Pos2, Rect, Stroke, StrokeKind, Ui};
 
-use crate::{
-    ui::utils::from_ratio_rect,
-    ui::{RenderInfo, move_resize::MoveResize},
-};
+use crate::ui::{move_resize::MoveResize, utils::from_ratio_rect, window::RenderInfo};
 
 const FULL_RECT: Rect = Rect {
     min: Pos2 { x: 0f32, y: 0f32 },

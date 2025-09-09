@@ -2,7 +2,7 @@ use std::sync::atomic::AtomicU32;
 
 use eframe::egui::{Pos2, Response, Ui, ahash::HashMap};
 
-use crate::ui::RenderInfo;
+use crate::ui::window::RenderInfo;
 pub mod circle;
 pub mod line;
 pub mod number;

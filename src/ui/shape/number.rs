@@ -14,9 +14,10 @@ use eframe::{
 
 use crate::ui::move_resize::hover_range;
 use crate::ui::shape::CreateAt;
+use crate::ui::window::RenderInfo;
 use crate::{
     ui::utils::{from_ratio_pos, to_ratio_pos},
-    ui::{RenderInfo, move_resize::LineMove, shape::Shape},
+    ui::{move_resize::LineMove, shape::Shape},
 };
 
 #[derive(Clone)]

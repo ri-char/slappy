@@ -3,9 +3,9 @@ use eframe::egui::{
     Vec2,
 };
 
-use crate::{
-    ui::RenderInfo,
-    ui::utils::{from_ratio_pos, from_ratio_rect, to_ratio_pos, to_ratio_rect},
+use crate::ui::{
+    utils::{from_ratio_pos, from_ratio_rect, to_ratio_pos, to_ratio_rect},
+    window::RenderInfo,
 };
 
 const DEFAULT_INTERACT_RANGE: f32 = 10f32;

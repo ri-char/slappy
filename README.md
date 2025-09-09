@@ -80,6 +80,12 @@ For better experience, one monitor should be capture at one time. If you are usi
 grim -g "$(hyprctl monitors -j | jq -r '.[] | select(.focused) | "\(.x),\(.y) \(.width/.scale|tostring|split(".")[0])x\(.height/.scale|tostring|split(".")[0])"')" - | slappy -o my_screenshot.png -e
 ```
 
+In order to pin the image on the top, it recommend to add these rules into your Hyprland configure:
+```
+windowrulev2 = float, title:^Pinned Screenshot$, class:^slappy$
+windowrulev2 = pin, title:^Pinned Screenshot$, class:^slappy$
+```
+
 *Note: Replace `grim` with your preferred Wayland screenshot tool.*
 
 * **Text containing CJK characters:**

@@ -6,12 +6,12 @@ edition = "2024"
 [dependencies]
 anyhow = "1.0.99"
 arboard = { version = "*", features = ["wayland-data-control"] }
-clap = { version = "4.5.47", features = ["derive"] }
-eframe = { version = "0.32", features = ["__screenshot", "wayland", "default_fonts", "glow"], default-features = false }
-egui_extras = { version = "0.32", features = ["image"], default-features = false }
-env_logger = { version = "0.11", features = ["auto-color", "humantime"] }
-fontconfig = { version = "0.10.0", features = ["dlopen"] }
+clap = { version = "4", features = ["derive"] }
+eframe = { version = "0", features = ["__screenshot", "wayland", "default_fonts", "glow"], default-features = false }
+egui_extras = { version = "0", features = ["image"], default-features = false }
+env_logger = { version = "0", features = ["auto-color", "humantime"] }
+fontconfig = { version = "0.10", features = ["dlopen"] }
 image = "0.25"
-log = "0.4.28"
+log = "0.4"
 strum = { version = "0.27", features = ["derive"] }
 winit = { version = "0.30", default-features = false, features = ["ahash", "bytemuck", "memmap2", "percent-encoding", "rwh_06", "sctk", "sctk-adwaita", "wayland", "wayland-backend", "wayland-client", "wayland-csd-adwaita", "wayland-dlopen", "wayland-protocols", "wayland-protocols-plasma"] }

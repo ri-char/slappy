@@ -1,11 +1,13 @@
 use std::{collections::HashMap, io::Read, sync::Arc};
 
-use crate::ui::MyApp;
+use crate::ui::window::{edit_window::EditWindow, pin_window::PinWindow};
 use anyhow::{Context, Result};
 use clap::Parser;
 use eframe::{
     CreationContext,
-    egui::{FontData, FontDefinitions, FontFamily, Pos2, ViewportBuilder},
+    egui::{
+        ColorImage, FontData, FontDefinitions, FontFamily, TextureOptions, Vec2, ViewportBuilder,
+    },
 };
 use log::warn;
 
@@ -36,12 +38,15 @@ fn main() -> Result<()> {
 
     let options = eframe::NativeOptions {
         viewport: ViewportBuilder::default()
+            .with_app_id("slappy")
             .with_always_on_top()
-            .with_position(Pos2::ZERO)
-            .with_fullscreen(true),
+            .with_fullscreen(true)
+            .with_decorations(false),
+
         ..Default::default()
     };
 
+    // read image
     let image_data = if arg.input == "-" {
         let mut image_data = Vec::new();
         std::io::stdin()
@@ -52,6 +57,7 @@ fn main() -> Result<()> {
         std::fs::read(&arg.input).with_context(|| "Failed to read image data from stdin")?
     };
     let fonts_data = load_font(&arg.fonts)?;
+    let mut pinned_image: Option<ColorImage> = None;
     let create_with_context = |ctx: &CreationContext| -> Result<Box<dyn eframe::App>, _> {
         let mut fonts = FontDefinitions::default();
         let font_family = if fonts_data.is_empty() {
@@ -69,11 +75,44 @@ fn main() -> Result<()> {
 
         ctx.egui_ctx.set_fonts(fonts);
         egui_extras::install_image_loaders(&ctx.egui_ctx);
-        Ok(Box::new(MyApp::new(image_data, font_family, arg)))
+        Ok(Box::new(EditWindow::new(
+            image_data,
+            font_family,
+            arg,
+            &mut pinned_image,
+        )))
     };
     eframe::run_native("Slappy", options, Box::new(create_with_context))
         .map_err(|e| anyhow::anyhow!("{}", e))?;
 
+    if let Some(pinned_image) = pinned_image {
+        let window_size = Vec2 {
+            x: pinned_image.size[0] as f32,
+            y: pinned_image.size[1] as f32,
+        };
+        let options = eframe::NativeOptions {
+            viewport: ViewportBuilder::default()
+                .with_app_id("slappy")
+                .with_always_on_top()
+                .with_fullscreen(false)
+                .with_decorations(false)
+                .with_title("Pinned Screenshot")
+                .with_inner_size(window_size)
+                .with_transparent(true)
+                .with_close_button(false),
+
+            ..Default::default()
+        };
+        let create_with_context = |ctx: &CreationContext| -> Result<Box<dyn eframe::App>, _> {
+            Ok(Box::new(PinWindow::new(ctx.egui_ctx.load_texture(
+                "pinned_screenshot",
+                pinned_image,
+                TextureOptions::LINEAR,
+            ))))
+        };
+        eframe::run_native("Slappy", options, Box::new(create_with_context))
+            .map_err(|e| anyhow::anyhow!("{}", e))?;
+    }
     Ok(())
 }
 

@@ -6,10 +6,10 @@ use eframe::egui::{
 use eframe::epaint::PathShape;
 
 use crate::ui::{
-    RenderInfo,
     move_resize::{LineMove, hover_range},
     shape::{CreateAt, Shape},
     utils::{from_ratio_pos, to_ratio_pos},
+    window::RenderInfo,
 };
 
 #[derive(Clone)]

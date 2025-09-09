@@ -5,10 +5,10 @@ use eframe::egui::{
 };
 
 use crate::ui::{
-    RenderInfo,
     move_resize::{hover_range, key_arrow_to_offset},
     shape::{CreateAt, Shape},
     utils::{from_ratio_pos, to_ratio_pos},
+    window::RenderInfo,
 };
 
 #[derive(Clone)]
