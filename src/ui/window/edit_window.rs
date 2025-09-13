@@ -1,10 +1,15 @@
 use std::io::{Cursor, Write};
+use std::sync::{Arc, LazyLock};
 
-use eframe::App;
+use eframe::egui::mutex::Mutex;
 use eframe::egui::{self, Button, Image, Rect, Ui, Vec2, Widget, ahash::HashMap};
 use eframe::egui::{
-    Align2, Color32, ColorImage, Context, FontFamily, Modifiers, Pos2, Response, RichText, Spinner,
+    Align2, Color32, ColorImage, Context, FontFamily, Modifiers, PaintCallback, PaintCallbackInfo,
+    Response, RichText, Spinner,
 };
+use eframe::egui_glow::Painter;
+use eframe::glow::{self, HasContext};
+use eframe::{App, egui_glow};
 use egui::Key;
 use strum::IntoEnumIterator;
 use strum::{EnumIter, IntoStaticStr};
@@ -58,7 +63,6 @@ pub struct EditWindow<'a> {
     error_message: Option<String>,
 
     want_screenshot: bool,
-    want_screenshot_first_signal: bool,
     screenshot_copy: bool,
     screenshot_save: bool,
     screenshot_pin: bool,
@@ -90,7 +94,6 @@ impl<'a> EditWindow<'a> {
             error_message: None,
             user_font,
             want_screenshot: false,
-            want_screenshot_first_signal: false,
             screenshot_copy: false,
             screenshot_save: false,
             screenshot_pin: false,
@@ -129,16 +132,22 @@ impl<'a> App for EditWindow<'a> {
                         .ui(ui, &render_info, self.selected_tool == Tool::Crop);
                 }
 
-                if self.want_screenshot_first_signal {
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot(Default::default()));
-                    self.want_screenshot_first_signal = false;
+                if self.want_screenshot {
+                    ui.painter().add(egui::Shape::Callback(PaintCallback {
+                        rect: from_ratio_rect(
+                            &self.crop_tool.cropped_range,
+                            &render_info.screenshot_rect,
+                        ),
+                        callback: Arc::<egui_glow::CallbackFn>::new(egui_glow::CallbackFn::new(
+                            screenshot,
+                        )),
+                    }));
+                    self.want_screenshot = false;
                 }
                 // Check for returned screenshot
-                self.handle_screenshot_event(ctx, &render_info);
+                self.handle_screenshot_event(ctx);
             });
-        if !self.want_screenshot {
-            self.ui_toolbar(ctx, &render_info);
-        }
+        self.ui_toolbar(ctx, &render_info);
 
         self.ui_error_message(ctx);
     }
@@ -210,14 +219,13 @@ impl<'a> EditWindow<'a> {
                         && !ctx.wants_keyboard_input();
                     let copy_btn_clicked = ui.add_enabled(saveable, Button::new("Copy")).clicked();
                     let copy_and_save_btn_clicked = ui.add_enabled(saveable, Button::new("Copy and Save")).clicked();
-                    let pin_btn_clicked = ui.button("Pin").clicked();
+                    let pin_btn_clicked = ui.add_enabled(saveable, Button::new("Pin")).clicked();
 
-                    if save_shotcut || save_btn_clicked || copy_shotcut || copy_btn_clicked || copy_and_save_btn_clicked || pin_btn_clicked{
+                    if save_shotcut || save_btn_clicked || copy_shotcut || copy_btn_clicked || copy_and_save_btn_clicked || pin_btn_clicked {
                         if !saveable {
                             self.error_message = Some("Save or copy failed. Crop area exceeds screen. Please maximize the window and try again.".to_string());
                         } else {
                             self.want_screenshot = true;
-                            self.want_screenshot_first_signal = true;
                             self.screenshot_copy = copy_shotcut || copy_btn_clicked || copy_and_save_btn_clicked;
                             self.screenshot_save = save_shotcut || save_btn_clicked || copy_and_save_btn_clicked;
                             self.screenshot_pin = pin_btn_clicked;
@@ -339,34 +347,10 @@ impl<'a> EditWindow<'a> {
         }
     }
 
-    fn handle_screenshot_event(&mut self, ctx: &Context, render_info: &RenderInfo) {
-        let screenshot_image = ctx.input(|i| {
-            for event in &i.raw.events {
-                if let egui::Event::Screenshot { image, .. } = event {
-                    return Some(image.clone());
-                }
-            }
-            None
-        });
-        let Some(image) = screenshot_image else {
+    fn handle_screenshot_event(&mut self, ctx: &Context) {
+        let Some(cropped) = SAVED_IMAGE.lock().take() else {
             return;
         };
-        let pixels_per_point = ctx.pixels_per_point();
-        let cropped_range =
-            from_ratio_rect(&self.crop_tool.cropped_range, &render_info.screenshot_rect);
-        let image_rect = Rect::from_min_max(
-            Pos2::ZERO,
-            Pos2 {
-                x: image.width() as f32 / pixels_per_point,
-                y: image.height() as f32 / pixels_per_point,
-            },
-        );
-        if !image_rect.contains_rect(cropped_range) {
-            self.error_message = Some("Save or copy failed. Crop area exceeds screen. Please maximize the window and try again.".to_string());
-            return;
-        }
-        let cropped = image.region(&cropped_range, Some(pixels_per_point));
-
         if let Err(e) = save_image_as_file(
             cropped.clone(),
             self.screenshot_copy,
@@ -376,7 +360,6 @@ impl<'a> EditWindow<'a> {
             self.error_message = Some(e.to_string());
             return;
         }
-        self.want_screenshot = false;
         if self.arg.exit && !self.screenshot_pin {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
@@ -444,4 +427,30 @@ fn save_image_as_file(
         }
     }
     Ok(())
+}
+
+static SAVED_IMAGE: LazyLock<Mutex<Option<egui::ColorImage>>> = LazyLock::new(|| Mutex::new(None));
+
+fn screenshot(callback_info: PaintCallbackInfo, painter: &Painter) {
+    let d = callback_info.viewport_in_pixels();
+    let mut pixels = vec![0_u8; (d.width_px * d.height_px * 4) as usize];
+    unsafe {
+        painter.gl().read_pixels(
+            callback_info.viewport.min.x as i32,
+            callback_info.viewport.min.y as i32,
+            d.width_px,
+            d.height_px,
+            glow::RGBA,
+            glow::UNSIGNED_BYTE,
+            glow::PixelPackData::Slice(Some(&mut pixels)),
+        );
+    }
+    let mut flipped = Vec::with_capacity((d.width_px * d.height_px * 4) as usize);
+    for row in pixels.chunks_exact((d.width_px * 4) as usize).rev() {
+        flipped.extend_from_slice(bytemuck::cast_slice(row));
+    }
+    *SAVED_IMAGE.lock() = Some(egui::ColorImage::new(
+        [d.width_px as usize, d.height_px as usize],
+        flipped,
+    ));
 }

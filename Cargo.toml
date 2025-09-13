@@ -4,8 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-anyhow = "1.0.99"
+anyhow = "1"
 arboard = { version = "*", features = ["wayland-data-control"] }
+bytemuck = "*"
 clap = { version = "4", features = ["derive"] }
 eframe = { version = "0", features = ["__screenshot", "wayland", "default_fonts", "glow"], default-features = false }
 egui_extras = { version = "0", features = ["image"], default-features = false }
