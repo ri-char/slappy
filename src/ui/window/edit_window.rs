@@ -1,4 +1,5 @@
 use std::io::{Cursor, Write};
+use std::process::{Command, Stdio};
 use std::sync::{Arc, LazyLock};
 
 use eframe::egui::mutex::Mutex;
@@ -399,31 +400,36 @@ fn save_image_as_file(
     output_path: Option<&str>,
     ctx: &Context,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    let mut cursor = Cursor::new(Vec::new());
+    image::write_buffer_with_format(
+        &mut cursor,
+        image.as_raw(),
+        image.width() as u32,
+        image.height() as u32,
+        image::ColorType::Rgba8,
+        image::ImageFormat::Png,
+    )?;
+    cursor.flush()?;
     if copy {
-        ctx.copy_image(image.clone());
+        cursor.set_position(0);
+        let mut process = Command::new("wl-copy")
+            .arg("-t")
+            .arg("image/png")
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()?;
+        std::io::copy(&mut cursor, process.stdin.as_mut().unwrap())?;
+        if !process.wait()?.success() {
+            ctx.copy_image(image.clone());
+        }
     }
     if let Some(output_path) = output_path {
+        cursor.set_position(0);
         if output_path == "-" {
-            let mut cursor = Cursor::new(Vec::new());
-            image::write_buffer_with_format(
-                &mut cursor,
-                image.as_raw(),
-                image.width() as u32,
-                image.height() as u32,
-                image::ColorType::Rgba8,
-                image::ImageFormat::Png,
-            )?;
-            cursor.flush()?;
-            cursor.set_position(0);
             std::io::copy(&mut cursor, &mut std::io::stdout())?;
         } else {
-            image::save_buffer(
-                output_path,
-                image.as_raw(),
-                image.width() as u32,
-                image.height() as u32,
-                image::ColorType::Rgba8,
-            )?;
+            let mut file = std::fs::File::create(output_path)?;
+            std::io::copy(&mut cursor, &mut file)?;
         }
     }
     Ok(())
