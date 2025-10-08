@@ -442,8 +442,8 @@ fn screenshot(callback_info: PaintCallbackInfo, painter: &Painter) {
     let mut pixels = vec![0_u8; (d.width_px * d.height_px * 4) as usize];
     unsafe {
         painter.gl().read_pixels(
-            callback_info.viewport.min.x as i32,
-            callback_info.viewport.min.y as i32,
+            d.left_px,
+            d.from_bottom_px,
             d.width_px,
             d.height_px,
             glow::RGBA,
